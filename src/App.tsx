@@ -2339,7 +2339,7 @@ export default function App() {
                 </div>
               )}
 
-              {history.length > 0 && userRole === 'teacher' && (
+              {userRole === 'teacher' && history.length > 0 && (
                 <div className="mt-6 border-t border-slate-100 pt-6">
                   {showDeleteConfirm ? (
                     <div className="flex flex-col gap-2">
