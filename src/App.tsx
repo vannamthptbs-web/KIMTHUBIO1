@@ -1491,19 +1491,20 @@ function cn(...inputs: ClassValue[]) {
 
 export default function App() {
   const [view, setView] = useState<'login' | 'landing' | 'study' | 'quiz' | 'result'>('login');
-  const [userRole, setUserRole] = useState<'none' | 'student' | 'teacher'>('none');
+  const [userRole, setUserRole] = useState<'none' | 'student' | 'teacher'>(() => (localStorage.getItem('bio_user_role') as any) || 'none');
   const [selectedLessonId, setSelectedLessonId] = useState<string>(LESSONS[0].id);
   const [quizQuestions, setQuizQuestions] = useState<Question[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number>>({});
   const [quizResult, setQuizResult] = useState<QuizResult | null>(null);
-  const [studentName, setStudentName] = useState('');
+  const [studentName, setStudentName] = useState(() => localStorage.getItem('bio_student_name') || '');
   const [googleTokens, setGoogleTokens] = useState<any>(null);
   const [spreadsheetId, setSpreadsheetId] = useState<string | null>(localStorage.getItem('bio_spreadsheet_id'));
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [isServerConnected, setIsServerConnected] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [isTeacher, setIsTeacher] = useState(false);
+  const [isTeacher, setIsTeacher] = useState(() => localStorage.getItem('bio_is_teacher') === 'true');
   const [showTeacherLogin, setShowTeacherLogin] = useState(false);
   const [loginUser, setLoginUser] = useState('');
   const [loginPass, setLoginPass] = useState('');
@@ -1514,6 +1515,18 @@ export default function App() {
   });
 
   useEffect(() => {
+    if (userRole !== 'none' && view === 'login') {
+      setView('landing');
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('bio_user_role', userRole);
+    localStorage.setItem('bio_student_name', studentName);
+    localStorage.setItem('bio_is_teacher', isTeacher.toString());
+  }, [userRole, studentName, isTeacher]);
+
+  useEffect(() => {
     localStorage.setItem('bio_quiz_history', JSON.stringify(history));
   }, [history]);
 
@@ -1522,6 +1535,7 @@ export default function App() {
       if (event.data?.type === 'GOOGLE_AUTH_SUCCESS') {
         setGoogleTokens(event.data.tokens);
         localStorage.setItem('google_tokens', JSON.stringify(event.data.tokens));
+        setIsServerConnected(true);
       }
     };
     window.addEventListener('message', handleMessage);
@@ -1530,6 +1544,18 @@ export default function App() {
     if (savedTokens) {
       setGoogleTokens(JSON.parse(savedTokens));
     }
+
+    // Check server connection status
+    fetch('/api/sheets/status')
+      .then(res => res.json())
+      .then(data => {
+        setIsServerConnected(data.connected);
+        if (data.spreadsheetId && !spreadsheetId) {
+          setSpreadsheetId(data.spreadsheetId);
+          localStorage.setItem('bio_spreadsheet_id', data.spreadsheetId);
+        }
+      })
+      .catch(err => console.error('Failed to check sheets status', err));
 
     return () => window.removeEventListener('message', handleMessage);
   }, []);
@@ -1547,8 +1573,14 @@ export default function App() {
   const handleLogout = () => {
     setGoogleTokens(null);
     localStorage.removeItem('google_tokens');
+    localStorage.removeItem('bio_user_role');
+    localStorage.removeItem('bio_student_name');
+    localStorage.removeItem('bio_is_teacher');
     setUserRole('none');
     setStudentName('');
+    setIsTeacher(false);
+    setLoginUser('');
+    setLoginPass('');
     setView('login');
   };
 
@@ -1622,14 +1654,14 @@ export default function App() {
     }, ...prev].slice(0, 10)); // Keep last 10
 
     // Auto-save to Google Sheets if connected
-    if (googleTokens) {
+    if (googleTokens || isServerConnected) {
       console.log('Triggering auto-save...');
       saveToSheets(result);
     }
   };
 
   const saveToSheets = async (result: QuizResult) => {
-    if (!googleTokens) return;
+    if (!googleTokens && !isServerConnected) return;
     
     setIsSaving(true);
     setSaveStatus('idle');
@@ -1638,7 +1670,7 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          tokens: googleTokens,
+          tokens: googleTokens, // Server will use its own if this is null
           spreadsheetId: localStorage.getItem('bio_spreadsheet_id'), // Use latest from storage
           data: [
             new Date().toLocaleString('vi-VN'),
@@ -1701,28 +1733,34 @@ export default function App() {
             </div>
           )}
 
-          {googleTokens ? (
+          {(googleTokens || isServerConnected) ? (
             <div className="flex items-center gap-3">
               <div className="hidden md:flex flex-col items-end">
-                <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Đã kết nối Sheets</span>
-                <span className="text-sm font-semibold text-emerald-600">Google Account</span>
+                <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">
+                  {isServerConnected ? 'Hệ thống đã kết nối' : 'Đã kết nối Sheets'}
+                </span>
+                <span className="text-sm font-semibold text-emerald-600">Google Sheets</span>
               </div>
-              <button 
-                onClick={handleLogout}
-                className="p-2 text-slate-400 hover:text-red-500 transition-colors"
-                title="Đăng xuất"
-              >
-                <LogOut className="w-5 h-5" />
-              </button>
+              {userRole === 'teacher' && (
+                <button 
+                  onClick={handleLogout}
+                  className="p-2 text-slate-400 hover:text-red-500 transition-colors"
+                  title="Đăng xuất"
+                >
+                  <LogOut className="w-5 h-5" />
+                </button>
+              )}
             </div>
           ) : (
-            <button 
-              onClick={handleConnectGoogle}
-              className="flex items-center gap-2 bg-white border border-slate-200 px-4 py-2 rounded-full text-sm font-medium hover:bg-slate-50 transition-all shadow-sm"
-            >
-              <Database className="w-4 h-4 text-emerald-600" />
-              <span>Kết nối Google Sheets</span>
-            </button>
+            userRole === 'teacher' && (
+              <button 
+                onClick={handleConnectGoogle}
+                className="flex items-center gap-2 bg-white border border-slate-200 px-4 py-2 rounded-full text-sm font-medium hover:bg-slate-50 transition-all shadow-sm"
+              >
+                <Database className="w-4 h-4 text-emerald-600" />
+                <span>Kết nối Google Sheets</span>
+              </button>
+            )
           )}
         </div>
       </nav>
@@ -1743,7 +1781,14 @@ export default function App() {
                     <GraduationCap className="text-white w-8 h-8" />
                   </div>
                   <h2 className="text-3xl font-serif font-bold text-slate-900 mb-2">Xin chào!</h2>
-                  <p className="text-slate-500 mb-10">Vui lòng chọn vai trò của bạn để bắt đầu</p>
+                  <p className="text-slate-500 mb-6">Vui lòng chọn vai trò của bạn để bắt đầu</p>
+
+                  {isServerConnected && (
+                    <div className="mb-8 inline-flex items-center gap-2 bg-emerald-50 px-4 py-2 rounded-full border border-emerald-100">
+                      <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                      <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider">Hệ thống đã kết nối Google Sheets</span>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-1 gap-4">
                     <button
@@ -1902,6 +1947,12 @@ export default function App() {
                     Hệ thống học tập và kiểm tra kiến thức môn Sinh học lớp 10. <br/>
                     <span className="font-medium text-slate-500">Tác giả: Cô Kiều Thị Kim Thu</span>
                   </p>
+                  {isServerConnected && (
+                    <div className="inline-flex items-center gap-2 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-100">
+                      <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+                      <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-widest">Hệ thống đã sẵn sàng lưu điểm</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid md:grid-cols-2 gap-8">
@@ -1954,14 +2005,14 @@ export default function App() {
                   </div>
                 </div>
 
-                {!googleTokens && (
+                {!googleTokens && !isServerConnected && (
                   <div className="bg-amber-50 border border-amber-100 p-6 rounded-2xl flex items-start gap-4">
                     <AlertCircle className="text-amber-600 w-6 h-6 shrink-0 mt-1" />
                     <div>
                       <h4 className="font-bold text-amber-900">Lưu ý về kết quả</h4>
                       <p className="text-amber-800 text-sm">
-                        Bạn chưa kết nối với Google Sheets. Kết quả bài kiểm tra sẽ không được lưu lại tự động. 
-                        Hãy kết nối ở góc trên bên phải để lưu điểm số của mình.
+                        Hệ thống chưa được kết nối với Google Sheets. Kết quả bài kiểm tra sẽ không được lưu lại tự động. 
+                        {userRole === 'teacher' ? ' Hãy kết nối ở góc trên bên phải để lưu điểm số.' : ' Vui lòng báo giáo viên kết nối hệ thống.'}
                       </p>
                     </div>
                   </div>

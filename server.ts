@@ -3,11 +3,33 @@ import { createServer as createViteServer } from "vite";
 import { google } from "googleapis";
 import dotenv from "dotenv";
 import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
+import { dirname } from "path";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 dotenv.config();
 
 const app = express();
 const PORT = 3000;
+const TOKENS_PATH = path.join(__dirname, "google_tokens.json");
+
+// Helper to load/save tokens
+function loadTokens() {
+  if (fs.existsSync(TOKENS_PATH)) {
+    return JSON.parse(fs.readFileSync(TOKENS_PATH, "utf-8"));
+  }
+  return null;
+}
+
+function saveTokens(tokens: any, spreadsheetId?: string) {
+  const current = loadTokens() || {};
+  const updated = { ...current, ...tokens };
+  if (spreadsheetId) updated.spreadsheetId = spreadsheetId;
+  fs.writeFileSync(TOKENS_PATH, JSON.stringify(updated));
+}
 
 app.use(express.json());
 
@@ -32,8 +54,9 @@ app.get("/auth/callback", async (req, res) => {
   const { code } = req.query;
   try {
     const { tokens } = await oauth2Client.getToken(code as string);
-    // In a real app, we'd store this in a session/db. 
-    // For this demo, we'll send it back to the client via postMessage
+    // Persist tokens on server for automatic connection
+    saveTokens(tokens);
+    
     res.send(`
       <html>
         <body>
@@ -59,22 +82,33 @@ app.get("/auth/callback", async (req, res) => {
 });
 
 app.post("/api/sheets/save", async (req, res) => {
-  const { tokens, data, spreadsheetId } = req.body;
+  const { tokens: clientTokens, data, spreadsheetId: clientSpreadsheetId } = req.body;
+  
+  // Try to get tokens from server storage if not provided by client
+  const serverData = loadTokens();
+  const tokens = clientTokens || (serverData ? { 
+    access_token: serverData.access_token, 
+    refresh_token: serverData.refresh_token,
+    scope: serverData.scope,
+    token_type: serverData.token_type,
+    expiry_date: serverData.expiry_date
+  } : null);
+
   if (!tokens || !data) {
-    return res.status(400).json({ error: "Missing tokens or data" });
+    return res.status(400).json({ error: "Hệ thống chưa được kết nối với Google Sheets. Vui lòng liên hệ giáo viên." });
   }
 
   try {
     oauth2Client.setCredentials(tokens);
     const sheets = google.sheets({ version: "v4", auth: oauth2Client });
 
-    let targetId = spreadsheetId;
+    let targetId = clientSpreadsheetId || serverData?.spreadsheetId;
 
     // If no spreadsheetId provided, create a new one
     if (!targetId) {
       const resource = {
         properties: {
-          title: "Kết quả kiểm tra Sinh học 10 - Vi sinh vật",
+          title: "Kết quả kiểm tra Sinh học 4.0 - THPT Dương Xá",
         },
         sheets: [
           {
@@ -90,6 +124,9 @@ app.post("/api/sheets/save", async (req, res) => {
       });
       targetId = spreadsheet.data.spreadsheetId;
       
+      // Save the new spreadsheetId
+      saveTokens({}, targetId!);
+
       // Add headers
       await sheets.spreadsheets.values.update({
         spreadsheetId: targetId!,
@@ -116,6 +153,14 @@ app.post("/api/sheets/save", async (req, res) => {
     const errorMessage = error.response?.data?.error?.message || error.message || "Unknown error occurred";
     res.status(500).json({ error: errorMessage });
   }
+});
+
+app.get("/api/sheets/status", (req, res) => {
+  const serverData = loadTokens();
+  res.json({ 
+    connected: !!serverData?.access_token,
+    spreadsheetId: serverData?.spreadsheetId 
+  });
 });
 
 // Vite middleware for development
