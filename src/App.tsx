@@ -1795,13 +1795,12 @@ export default function App() {
                       onClick={() => {
                         setShowTeacherLogin(false);
                         setLoginError(false);
-                        setUserRole('student');
                         setLoginUser('');
                         setLoginPass('');
                       }}
                       className={cn(
                         "group p-6 rounded-3xl border-2 transition-all text-left flex items-center gap-4",
-                        userRole === 'student' && !showTeacherLogin ? "border-emerald-500 bg-emerald-50/50" : "border-slate-100 hover:border-slate-200"
+                        userRole === 'student' || (!showTeacherLogin && userRole === 'none') ? "border-emerald-500 bg-emerald-50/50" : "border-slate-100 hover:border-slate-200"
                       )}
                     >
                       <div className="bg-white p-3 rounded-2xl shadow-sm group-hover:scale-110 transition-transform">
@@ -1817,7 +1816,6 @@ export default function App() {
                       onClick={() => {
                         setShowTeacherLogin(true);
                         setLoginError(false);
-                        setUserRole('teacher');
                         setLoginUser('');
                         setLoginPass('');
                       }}
@@ -1836,7 +1834,7 @@ export default function App() {
                     </button>
                   </div>
 
-                  {userRole === 'student' && !showTeacherLogin && (
+                  {(!showTeacherLogin && userRole !== 'teacher') && (
                     <motion.div
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
@@ -1926,6 +1924,21 @@ export default function App() {
                       </button>
                     </motion.div>
                   )}
+                </div>
+
+                {/* Học lý thuyết card for guests */}
+                <div className="mt-8 bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-xl shadow-slate-200/50 text-left group">
+                  <div className="bg-blue-50 w-12 h-12 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                    <BookOpen className="text-blue-600 w-6 h-6" />
+                  </div>
+                  <h3 className="text-xl font-serif font-bold mb-3">Học lý thuyết</h3>
+                  <p className="text-slate-600 mb-6">Ôn tập các kiến thức trọng tâm về đặc điểm, dinh dưỡng và sinh trưởng của vi sinh vật.</p>
+                  <button 
+                    onClick={() => setView('study')}
+                    className="flex items-center gap-2 text-blue-600 font-semibold hover:gap-3 transition-all"
+                  >
+                    Bắt đầu học <ChevronRight className="w-4 h-4" />
+                  </button>
                 </div>
               </motion.div>
             )}
@@ -2037,7 +2050,7 @@ export default function App() {
                 
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
                   {/* Lesson Menu */}
-                  <div className="md:col-span-4 space-y-2">
+                  <div className="md:col-span-3 space-y-2">
                     <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4 px-2">Danh sách bài học</h3>
                     {LESSONS.map((lesson) => (
                       <button
@@ -2056,7 +2069,7 @@ export default function App() {
                   </div>
 
                   {/* Lesson Content */}
-                  <div className="md:col-span-8">
+                  <div className="md:col-span-9">
                     <div className="bg-white p-8 md:p-10 rounded-3xl border border-slate-200 shadow-sm">
                       <div className="markdown-body">
                         <ReactMarkdown>
@@ -2339,7 +2352,7 @@ export default function App() {
                 </div>
               )}
 
-              {userRole === 'teacher' && history.length > 0 && (
+              {userRole === 'teacher' && (
                 <div className="mt-6 border-t border-slate-100 pt-6">
                   {showDeleteConfirm ? (
                     <div className="flex flex-col gap-2">
